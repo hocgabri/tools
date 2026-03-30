@@ -620,37 +620,75 @@ Tips:
                     scan_backs = True
 
             if scan_backs:
-                # --- Scan back sides ---
-                print("\n" + "=" * 60)
-                if batch_num == 1:
-                    print("STEP 2: SCANNING BACK SIDES")
-                else:
-                    print(f"BATCH {batch_num}: SCANNING BACK SIDES")
-                print("=" * 60)
-                print()
-                print("Flip the pages for back-side scanning:")
-                print("  1. Take the entire output stack from the scanner tray")
-                print("  2. Flip the stack upside-down (do NOT reverse the order)")
-                print("  3. Load the flipped stack back into the ADF")
-                print()
-                print("This means the LAST page's back will be scanned first,")
-                print("and the tool will re-order them automatically.")
-                input("\nPress ENTER when ready to scan back sides...")
+                # --- Scan back sides (with retry support) ---
+                back_attempt = 0
+                while True:
+                    back_attempt += 1
+                    print("\n" + "=" * 60)
+                    if batch_num == 1:
+                        print("STEP 2: SCANNING BACK SIDES")
+                    else:
+                        print(f"BATCH {batch_num}: SCANNING BACK SIDES")
+                    if back_attempt > 1:
+                        print(f"  (Attempt {back_attempt})")
+                    print("=" * 60)
+                    print()
+                    print("Flip the pages for back-side scanning:")
+                    print("  1. Take the entire output stack from the scanner tray")
+                    print("  2. Flip the stack upside-down (do NOT reverse the order)")
+                    print("  3. Load the flipped stack back into the ADF")
+                    print()
+                    print("This means the LAST page's back will be scanned first,")
+                    print("and the tool will re-order them automatically.")
+                    input("\nPress ENTER when ready to scan back sides...")
 
-                backs = scan_batch(
-                    base_url, work_dir, f"{batch_prefix}_back",
-                    args.dpi, args.mode, "adf", args.paper,
-                )
+                    # Clean up previous failed attempt's files
+                    back_prefix = f"{batch_prefix}_back_{back_attempt}"
+                    backs = scan_batch(
+                        base_url, work_dir, back_prefix,
+                        args.dpi, args.mode, "adf", args.paper,
+                    )
 
-                if not backs:
-                    print("WARNING: No back pages scanned. Using fronts only for this batch.")
-                    all_pages.extend(fronts)
-                elif len(backs) != len(fronts):
-                    print(f"WARNING: Front pages ({len(fronts)}) != back pages ({len(backs)}).")
-                    print("         Pages will still be interleaved as best as possible.")
-                    all_pages.extend(interleave_pages(fronts, backs))
-                else:
-                    all_pages.extend(interleave_pages(fronts, backs))
+                    # Check result and offer retry
+                    if not backs:
+                        print("\nWARNING: No back pages were scanned.")
+                        retry = input("Retry back sides? [Y/n]: ").strip().lower()
+                        if retry in ("n", "no"):
+                            print("Skipping back sides, using fronts only for this batch.")
+                            all_pages.extend(fronts)
+                            break
+                        continue
+
+                    if len(backs) != len(fronts):
+                        print(f"\nWARNING: Expected {len(fronts)} back page(s) but got {len(backs)}.")
+                        print("  This may indicate a paper jam or misfeed.")
+                        print("  [r] Retry back sides (discard this attempt)")
+                        print("  [k] Keep as-is (interleave what we have)")
+                        print("  [s] Skip back sides (use fronts only)")
+                        choice = input("Choice [r/k/s]: ").strip().lower()
+                        if choice == "r":
+                            # Remove the partial back scan files
+                            for f in backs:
+                                try:
+                                    os.remove(f)
+                                except OSError:
+                                    pass
+                            continue
+                        elif choice == "s":
+                            for f in backs:
+                                try:
+                                    os.remove(f)
+                                except OSError:
+                                    pass
+                            all_pages.extend(fronts)
+                            break
+                        else:
+                            # Keep as-is
+                            all_pages.extend(interleave_pages(fronts, backs))
+                            break
+                    else:
+                        all_pages.extend(interleave_pages(fronts, backs))
+                        break
 
             # --- Ask if there are more pages ---
             total_so_far = len(all_pages)
