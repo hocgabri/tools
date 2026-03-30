@@ -607,9 +607,19 @@ Tips:
                     print("No pages scanned in this batch, skipping.")
                     break
 
+            # --- Ask whether to scan back sides ---
+            scan_backs = False
             if args.fronts_only:
                 all_pages.extend(fronts)
             else:
+                print(f"\n{len(fronts)} front page(s) scanned successfully.")
+                do_backs = input("Scan back sides for this batch? [Y/n]: ").strip().lower()
+                if do_backs in ("n", "no"):
+                    all_pages.extend(fronts)
+                else:
+                    scan_backs = True
+
+            if scan_backs:
                 # --- Scan back sides ---
                 print("\n" + "=" * 60)
                 if batch_num == 1:
@@ -617,9 +627,8 @@ Tips:
                 else:
                     print(f"BATCH {batch_num}: SCANNING BACK SIDES")
                 print("=" * 60)
-                print(f"\n{len(fronts)} front page(s) scanned successfully.")
                 print()
-                print("Now flip the pages for back-side scanning:")
+                print("Flip the pages for back-side scanning:")
                 print("  1. Take the entire output stack from the scanner tray")
                 print("  2. Flip the stack upside-down (do NOT reverse the order)")
                 print("  3. Load the flipped stack back into the ADF")
