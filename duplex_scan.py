@@ -10,7 +10,8 @@ Workflow:
   2. The tool scans all front sides via the document feeder.
   3. You are prompted to flip the entire output stack and re-load it.
   4. The tool scans all back sides.
-  5. Front and back pages are interleaved into a single PDF.
+  5. Asked if there are more pages — if yes, repeat from step 1.
+  6. All batches are merged into a single PDF.
 
 Requirements:
   - Python packages: img2pdf, Pillow  (pip install -r requirements.txt)
@@ -503,7 +504,8 @@ Scanning workflow:
   2. Front sides are scanned automatically
   3. Take the output stack, flip it upside-down, and reload into the ADF
   4. Back sides are scanned automatically
-  5. Pages are interleaved and saved as a single PDF
+  5. Asked if there are more pages — if yes, repeat from step 1
+  6. All batches are merged into a single PDF
 
 Tips:
   - Make sure the ADF pickup roller is clean for reliable feeding
@@ -575,61 +577,84 @@ Tips:
     print(f"Working directory: {work_dir}")
 
     try:
-        # --- Pass 1: Scan front sides ---
-        print("\n" + "=" * 60)
-        print("STEP 1: SCANNING FRONT SIDES")
-        print("=" * 60)
-        print("Load your documents FACE-UP in the ADF, page 1 on top.")
-        input("Press ENTER when ready to scan front sides...")
+        all_pages = []
+        batch_num = 0
 
-        fronts = scan_batch(
-            base_url, work_dir, "front", args.dpi, args.mode, "adf", args.paper
-        )
+        while True:
+            batch_num += 1
+            batch_prefix = f"b{batch_num}"
 
-        if not fronts:
-            print("ERROR: No front pages were scanned. Check your scanner and ADF.")
-            sys.exit(1)
+            # --- Scan front sides ---
+            print("\n" + "=" * 60)
+            if batch_num == 1:
+                print("STEP 1: SCANNING FRONT SIDES")
+            else:
+                print(f"BATCH {batch_num}: SCANNING FRONT SIDES")
+            print("=" * 60)
+            print("Load your documents FACE-UP in the ADF, page 1 on top.")
+            input("Press ENTER when ready to scan front sides...")
 
-        if args.fronts_only:
-            output = args.output or f"scan_{datetime.now():%Y%m%d_%H%M%S}.pdf"
-            create_pdf(fronts, output)
-            print(f"\nDone! Single-sided scan saved to: {output}")
-            return
+            fronts = scan_batch(
+                base_url, work_dir, f"{batch_prefix}_front",
+                args.dpi, args.mode, "adf", args.paper,
+            )
 
-        # --- Pass 2: Scan back sides ---
-        print("\n" + "=" * 60)
-        print("STEP 2: SCANNING BACK SIDES")
-        print("=" * 60)
-        print(f"\n{len(fronts)} front page(s) scanned successfully.")
-        print()
-        print("Now flip the pages for back-side scanning:")
-        print("  1. Take the entire output stack from the scanner tray")
-        print("  2. Flip the stack upside-down (do NOT reverse the order)")
-        print("  3. Load the flipped stack back into the ADF")
-        print()
-        print("This means the LAST page's back will be scanned first,")
-        print("and the tool will re-order them automatically.")
-        input("\nPress ENTER when ready to scan back sides...")
+            if not fronts:
+                if batch_num == 1:
+                    print("ERROR: No front pages were scanned. Check your scanner and ADF.")
+                    sys.exit(1)
+                else:
+                    print("No pages scanned in this batch, skipping.")
+                    break
 
-        backs = scan_batch(
-            base_url, work_dir, "back", args.dpi, args.mode, "adf", args.paper
-        )
+            if args.fronts_only:
+                all_pages.extend(fronts)
+            else:
+                # --- Scan back sides ---
+                print("\n" + "=" * 60)
+                if batch_num == 1:
+                    print("STEP 2: SCANNING BACK SIDES")
+                else:
+                    print(f"BATCH {batch_num}: SCANNING BACK SIDES")
+                print("=" * 60)
+                print(f"\n{len(fronts)} front page(s) scanned successfully.")
+                print()
+                print("Now flip the pages for back-side scanning:")
+                print("  1. Take the entire output stack from the scanner tray")
+                print("  2. Flip the stack upside-down (do NOT reverse the order)")
+                print("  3. Load the flipped stack back into the ADF")
+                print()
+                print("This means the LAST page's back will be scanned first,")
+                print("and the tool will re-order them automatically.")
+                input("\nPress ENTER when ready to scan back sides...")
 
-        if not backs:
-            print("WARNING: No back pages scanned. Creating PDF with fronts only.")
-            pages = fronts
-        elif len(backs) != len(fronts):
-            print(f"WARNING: Front pages ({len(fronts)}) != back pages ({len(backs)}).")
-            print("         Pages will still be interleaved as best as possible.")
-            pages = interleave_pages(fronts, backs)
-        else:
-            pages = interleave_pages(fronts, backs)
+                backs = scan_batch(
+                    base_url, work_dir, f"{batch_prefix}_back",
+                    args.dpi, args.mode, "adf", args.paper,
+                )
+
+                if not backs:
+                    print("WARNING: No back pages scanned. Using fronts only for this batch.")
+                    all_pages.extend(fronts)
+                elif len(backs) != len(fronts):
+                    print(f"WARNING: Front pages ({len(fronts)}) != back pages ({len(backs)}).")
+                    print("         Pages will still be interleaved as best as possible.")
+                    all_pages.extend(interleave_pages(fronts, backs))
+                else:
+                    all_pages.extend(interleave_pages(fronts, backs))
+
+            # --- Ask if there are more pages ---
+            total_so_far = len(all_pages)
+            print(f"\n{total_so_far} total page(s) scanned so far.")
+            more = input("More pages to scan? [y/N]: ").strip().lower()
+            if more not in ("y", "yes"):
+                break
 
         # --- Create final PDF ---
         output = args.output or f"scan_{datetime.now():%Y%m%d_%H%M%S}.pdf"
-        create_pdf(pages, output)
-        print(f"\nDone! Duplex scan saved to: {output}")
-        print(f"Total pages in PDF: {len(pages)}")
+        create_pdf(all_pages, output)
+        print(f"\nDone! Scan saved to: {output}")
+        print(f"Total pages in PDF: {len(all_pages)}")
 
     finally:
         if not args.keep_images:
