@@ -307,12 +307,9 @@ def get_scanner_status(base_url):
 
 def create_scan_job(base_url, dpi, mode, source, paper_size):
     """Submit an eSCL scan job and return the job URL."""
+    # Dimensions are always in 1/300th of an inch (per ContentRegionUnits)
+    # regardless of scan resolution — do not scale by DPI
     width, height = PAPER_SIZES.get(paper_size.lower(), PAPER_SIZES["a4"])
-
-    # Scale dimensions to match requested DPI (sizes are defined at 300 DPI)
-    scale = dpi / 300
-    width = int(width * scale)
-    height = int(height * scale)
 
     color_mode = COLOR_MODES.get(mode, "RGB24")
     input_source = "Feeder" if source == "adf" else "Platen"
